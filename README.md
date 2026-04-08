@@ -1,3 +1,4 @@
+# Setting the stage
 1. made folder "mkdir ~/ml_branch_predictor 
 2. cd into the folder "cd ~/ml_branch_predictor"
 3. compile the target "g++ beast_target.cpp -o beast_target"
