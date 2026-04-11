@@ -43,11 +43,11 @@ void update_history(long long pc, bool actual_taken) {
 int main() {
     cout << "\n--- INITIATING C++ HARDWARE SIMULATOR ---" << endl;
     
-    ifstream file("branch_data.csv");
+    ifstream file("branch_data_test.csv");
     string line;
 
     if (!file.is_open()) {
-        cout << "Error: Could not open branch_data.csv. Make sure it is in the same folder!" << endl;
+        cout << "Error: Could not open branch_data_test.csv. Make sure it is in the same folder!" << endl;
         return 1;
     }
 
