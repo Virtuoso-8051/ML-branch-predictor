@@ -1,6 +1,6 @@
-## Streamlit Dashboard
-pip install -r requirements.txt
-streamlit run app.py
+# Streamlit Dashboard
+1.pip install -r requirements.txt<br>
+2.streamlit run app.py
 
 # Setting the stage
 1. made folder "mkdir ~/ml_branch_predictor 
