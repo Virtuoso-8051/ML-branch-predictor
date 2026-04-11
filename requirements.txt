@@ -1,0 +1,7 @@
+streamlit
+pandas
+numpy
+plotly
+xgboost==1.7.6
+scikit-learn
+m2cgen

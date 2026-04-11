@@ -3,3 +3,8 @@ beast_target
 ai_test
 trace_sim
 __pycache__/
+*.so
+*.o
+*.pyc
+.conda/
+*.csv
