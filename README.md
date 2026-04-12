@@ -165,7 +165,7 @@ pip install xgboost==1.7.6
 |---|---|
 | `train_model.py` | Decision tree on 100k rows — quick sanity check |
 | `train_xgboost.py` | XGBoost on 1M rows |
-| `train_final.py` | Full XGBoost on all 31.8M rows (**close all other apps, needs ~16GB RAM**) |
+| `train_final.py` | Full XGBoost on all 31.8M rows (**close all other apps**) |
 
 ```bash
 python train_final.py
