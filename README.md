@@ -1,281 +1,176 @@
-# ML Branch Predictor
+# ML Branch Predictor (V2 Architecture)
+**Authors:** Anurag Raj & Aditi Chauhan 
 
-> Replaces algorithmic CPU branch prediction with Machine Learning. Uses Intel Pin to intercept C++ traces, trains an XGBoost model on 31.8M instructions, and transpiles the AI weights into bare-metal C++ for a dependency-free hardware simulator.
-1. **Accuracy** - 86.76%
-2. **Model** - XGBoost
-3. **Tool** - Intel PinTool
-4. **UI**- Streamlit Dashboard
+> Replaces a classical CPU 2-bit branch predictor with a Machine Learning model. Uses Intel Pin to intercept C++ execution traces, trains an XGBoost model on an adversarial payload, and transpiles the AI weights into bare-metal C++ for a zero-dependency hardware simulator.
 
+## What This Project Does
+Modern CPUs use legacy hardware state-machines (like 2-bit saturating counters) to predict branch outcomes. This project proves that a lightweight Machine Learning model can mathematically outperform hardware predictors, especially on adversarial or complex periodic code.
 
-
-##  What this project does
-
-Most CPUs use hand-crafted algorithms (like TAGE) to predict branch outcomes. This project asks: **can a machine learning model do the same job?**
-
-The pipeline:
-1. **Intel Pin** intercepts a running C++ program and records every branch decision (31.8M rows)
-2. **XGBoost** trains on that data, learning branch patterns
-3. **m2cgen** converts the trained model into pure hardcoded C++ `if-else` statements — zero runtime dependencies
-4. A **C++ simulator** replays the trace through the AI predictor and measures accuracy
-5. A **Streamlit dashboard** lets you paste any C++ code and see live results
+**The Pipeline:**
+1. **Intel Pin** intercepts a running C++ program (`beast_target.cpp`) and records exactly 5 features per branch, including an 8-bit local history window.
+2. **XGBoost** trains on ~2.78 million rows using a strict chronological split to prevent time-travel data leakage.
+3. **m2cgen** converts the trained model into a massive block of pure hardcoded C++ `if-else` statements (`ai_predictor.h`).
+4. **C++ Simulators** replay the trace through both a true Bimodal 2-Bit predictor and the transpiled AI predictor to compare accuracies.
+5. A **Streamlit Dashboard** provides a dynamic, visual UI for execution and analysis.
 
 ---
 
-## Results
+## The Results
+Our model was tested against a highly volatile, adversarial C++ payload designed specifically to induce hardware aliasing and break bimodal hysteresis.
 
-| Predictor | Accuracy |
-|---|---|
-| ML model — trained + tested on sorting | **86.76%** |
-| ML model — tested on unseen code | **83.83%** |
-| 2-bit saturating counter (classical) | ~84–87% |
+| Predictor Type | Evaluation Environment | Accuracy |
+|---|---|---|
+| **Classical Bimodal 2-Bit Counter** | Bare-Metal C++ Simulator | **71.12%** |
+| **XGBoost AI Model** | Python (Post-Chronological Split) | **99.97%** |
+| **Transpiled AI Model** | Bare-Metal C++ Simulator | **95.18%** |
 
-
-> The model generalises to unseen workloads with only a **2.93% accuracy drop** — it learned transferable branch behaviour patterns, not just sorting-specific ones.
+> **Conclusion:** By leveraging an 8-bit local history window, the AI successfully reverse-engineers periodic mathematical traps (Mod-3, Mod-2, LCGs) that permanently cripple legacy 2-bit state machines.
 
 ---
 
-##  Project structure
+## Project Structure
 
-```
+```text
 ml_branch_predictor/
-├── beast_target.cpp             # Branch-heavy C++ program for training data
-├── BranchDataGen.cpp            # Intel Pin tool — records branches to CSV
-├── train_model.py               # Quick decision tree on 100k rows (sanity check)
-├── train_xgboost.py             # XGBoost on 1M rows
-├── train_final.py               # Full XGBoost training on all 31.8M rows
+├── beast_target.cpp             # Adversarial C++ payload (Triggers hardware aliasing)
+├── BranchDataGen.cpp            # Intel Pin tool — records 5-column trace to CSV
+├── test_2bit.cpp                # Hardware simulator for the 2-bit baseline
+├── train_final.py               # XGBoost chronological training engine
 ├── extract_brain.py             # Converts model → ai_predictor.h via m2cgen
-├── trace_simulator.cpp          # C++ simulator that replays trace through AI
-├── ai_predictor.h               # Auto-generated bare-metal C++ prediction logic
+├── trace_simulator.cpp          # Bare-metal C++ AI simulator
+├── ai_predictor.h               # Auto-generated prediction logic (Zero Dependencies)
 ├── branch_predictor_brain.json  # Saved XGBoost model weights
-└── app.py                       # Streamlit dashboard
+└── app.py                       # Streamlit interactive frontend
 ```
 
 ---
 
-## ⚙️ Setup
+## ⚙️ Phase 1: Trace Extraction (C++ & Intel Pin)
 
 ### Prerequisites
-
-- Linux or WSL (Windows Subsystem for Linux)
-- `g++` compiler
-- Intel Pin ([download from Intel](https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-binary-instrumentation-tool-downloads.html))
-- Anaconda or Python 3.10+
-
----
+* Linux or WSL (Windows Subsystem for Linux)
+* `g++` compiler
+* Intel Pin Toolkit
 
 ### Step 1 — Set PIN_ROOT
-
+Extract Intel Pin and map the environment variable. Add it permanently so it survives terminal restarts:
 ```bash
 export PIN_ROOT=/home/yourname/pin-3.28-98749-g6643ecee5-gcc-linux
-```
-
-Add it permanently so it survives terminal restarts:
-
-```bash
-echo 'export PIN_ROOT=/home/yourname/pin-3.28-...' >> ~/.bashrc
+echo 'export PIN_ROOT=/home/yourname/pin-3.28-98749-g6643ecee5-gcc-linux' >> ~/.bashrc
 source ~/.bashrc
 ```
 
----
-
-### Step 2 — Create project folder
-
+### Step 2 — Compile the Target & Pin Tool
 ```bash
 mkdir ~/ml_branch_predictor
 cd ~/ml_branch_predictor
-```
 
----
-
-### Step 3 — Compile the target program
-
-```bash
+# Compile the adversarial payload
 g++ beast_target.cpp -o beast_target
-```
 
----
-
-### Step 4 — Compile the Pin tool
-
-```bash
+# Compile the Intel Pin extraction tool
 cp BranchDataGen.cpp $PIN_ROOT/source/tools/MyPinTool/
 cd $PIN_ROOT/source/tools/MyPinTool
 mkdir -p obj-intel64
 make obj-intel64/BranchDataGen.so
 ```
 
----
-
-### Step 5 — Generate branch trace
-
+### Step 3 — Generate Branch Trace & Test Baseline
+Run the target through Pin to generate `branch_data.csv` (Hardcapped at 5M branches to prevent disk I/O bottlenecks).
 ```bash
 cd ~/ml_branch_predictor
 $PIN_ROOT/pin -t $PIN_ROOT/source/tools/MyPinTool/obj-intel64/BranchDataGen.so -- ./beast_target
-```
 
-Wait for:
-```
---- BRANCH TRACE COMPLETE ---
-Data successfully saved to branch_data.csv
-```
-
-Optionally preview the first 15 rows:
-```bash
-head -n 15 branch_data.csv
+# Compile and run the legacy 2-bit hardware simulator
+g++ test_2bit.cpp -o test_2bit
+./test_2bit
 ```
 
 ---
 
-##  ML Training
+## 🧠 Phase 2: ML Training & Transpilation
 
-### Step 1 — Install Anaconda
-
+### Step 1 — Python & Conda Setup
+If you don't have Conda, download the installer and initialize it:
 ```bash
 cd ~
-wget https://repo.anaconda.com/archive/Anaconda3-2024.05-Linux-x86_64.sh
+wget [https://repo.anaconda.com/archive/Anaconda3-2024.05-Linux-x86_64.sh](https://repo.anaconda.com/archive/Anaconda3-2024.05-Linux-x86_64.sh)
 bash Anaconda3-2024.05-Linux-x86_64.sh
 source ~/.bashrc
 ```
-
-If you see a terms & conditions error:
-```bash
-conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-```
-
----
-
-### Step 2 — Create environment and install dependencies
-
+Create the ML environment:
 ```bash
 cd ~/ml_branch_predictor
 conda create -n ml_branch python=3.10 -y
 conda activate ml_branch
 conda install pandas scikit-learn numpy -y
-pip install xgboost==1.7.6
+pip install xgboost==2.0.3
 ```
+> **Note:** We are using XGBoost 2.0+ along with a custom locally patched version of `m2cgen` to handle the new AST JSON list structure and bypass legacy pinning requirements.
 
-> ⚠️ XGBoost must be pinned to **1.7.6** — newer versions store split values as lists which breaks m2cgen transpilation.
-
----
-
-### Step 3 — Run training
-
-| Script | Description |
-|---|---|
-| `train_model.py` | Decision tree on 100k rows — quick sanity check |
-| `train_xgboost.py` | XGBoost on 1M rows |
-| `train_final.py` | Full XGBoost on all 31.8M rows (**close all other apps**) |
-
+### Step 2 — Train the AI Engine
 ```bash
 python train_final.py
 ```
+*This script uses a chronological timeline split to prevent data leakage. The model is saved automatically to `branch_predictor_brain.json`.*
 
-The model is saved automatically to `branch_predictor_brain.json`.
-
----
-
-## Transpile Model to C++
-
-### Step 1 — Install m2cgen
-
-```bash
-pip install m2cgen
-```
-
-### Step 2 — Extract the brain
-
+### Step 3 — Extract the Brain to Bare-Metal C++
 ```bash
 python extract_brain.py
 ```
+*This converts the JSON weights into `ai_predictor.h` — a fully self-contained C++ namespace wrapper.*
 
-This converts `branch_predictor_brain.json` → `ai_predictor.h` — a fully self-contained C++ header with zero external dependencies.
-
-### Step 3 — Compile and run the simulator
-
+### Step 4 — Run the AI Hardware Simulator
 ```bash
 g++ trace_simulator.cpp -o trace_sim -O3
 ./trace_sim
 ```
 
-Expected output:
-```
-==========================================
- SIMULATION COMPLETE!
- Total Branches: 31,800,000+
- Correct Guesses: ...
- C++ AI Accuracy: 86.76%
-==========================================
-```
-
 ---
 
-## Streamlit Dashboard
+## 📊 Streamlit Dashboard & UI
 
-### Install dependencies
+The frontend provides an interactive environment to test custom C++ code, view dynamic accuracy graphs, and analyze branch logic without touching the terminal.
 
+### Install UI Dependencies
 ```bash
-pip install streamlit plotly pandas numpy
+conda activate ml_branch
+pip install streamlit plotly
 ```
 
-### Run the app
-
+### Run the Dashboard
 ```bash
 cd ~/ml_branch_predictor
 streamlit run app.py
 ```
+Open your browser at `http://localhost:8501`. 
 
-Open your browser at `http://localhost:8501`
+> ⚠️ **Note:** It may be possible that for traces which have millions of rows, the model takes around 5-10 minutes to give the results. Please don't refresh the page or press any buttons on the screen until it finishes processing.
 
-### Dashboard pages
-
-| Page | What it does |
-|---|---|
-| Run C++ Code | Paste any C++ program — app compiles, runs Pin, generates trace, runs both predictors automatically |
-| Upload CSV | Upload an existing `branch_data.csv` and run predictions |
-| Visualizations | Rolling accuracy chart, branch distribution pie, hot branches table, taken rate table |
-
-> PIN_ROOT is auto-detected from your environment. If the sidebar shows blank, paste your Pin path manually.<br>
->⚠️ It may be possible that for traces which have millions of rows, the model takes around 5-10 minutes to give the results, so please don't refresh the page or press any button on the screen till that time
----
-
-##  Running on another machine
-
-This project is not plug-and-play. The other person needs to:
-
-| Requirement | What to do |
-|---|---|
-| Intel Pin | Download from Intel website and extract |
-| `BranchDataGen.so` | Compile the Pin tool (Step 4 above) — **cannot be copied from another machine** |
-| `g++` | `sudo apt install g++` |
-| Python packages | `pip install streamlit plotly pandas numpy xgboost==1.7.6 m2cgen` |
-| PIN_ROOT | Set in sidebar or export in `~/.bashrc` |
-
-
-
-##  Key concepts
-
-**Branch prediction** — CPUs speculatively execute instructions before knowing the outcome of an `if` statement. A wrong guess flushes the pipeline (10–20 cycle penalty).
-
-**Intel Pin** — a dynamic binary instrumentation tool that injects code around any instruction while a program runs, recording PC address, target address, and taken/not-taken outcome for every branch.
-
-**XGBoost** — gradient boosting algorithm that builds trees sequentially, each correcting the mistakes of the previous one. Parallelises the heavy math across CPU cores.
-
-**m2cgen** — transpiles a trained ML model into pure language code (C++, Python, Java, etc.) with no ML library dependencies.
-
-**Hot branches** — branch instructions that execute the most times. Getting these right has the biggest impact on overall accuracy since mispredicting them costs millions of cycles.
+### Dashboard Features
+* **Live Execution:** Paste any C++ program. The app compiles it, injects Intel Pin, generates the trace, and runs both simulators automatically.
+* **Trace Analytics:** Upload existing `branch_data.csv` files for rapid inference.
+* **Visualizations:** Compare 2-Bit vs AI accuracy via rolling charts, analyze branch distribution pies, and view the hot-branch history table.
 
 ---
 
-##  How the CSV trace looks
+## Key Architecture Concepts
 
-```
-PC,Target,Taken
-0x401234,0x401240,1
-0x401234,0x401240,1
-0x401234,0x401240,0
-0x401267,0x401280,1
+* **The 8-Bit Local History:** The secret to the AI's success. Instead of only looking at the immediate branch, Intel Pin masks an 8-bit integer tracking the last 8 outcomes. The AI uses this to decode complex sequences.
+* **Data-Leakage Prevention:** We do not shuffle our train/test split. Time flows in one direction in a CPU. We train on the first 80% of the trace and predict the unseen final 20%.
+* **m2cgen Transpilation:** We completely drop all ML libraries (like scikit or xgboost) for deployment. The model is converted into raw, inline C++ code so it can be evaluated exactly like a physical hardware logic gate.
+
+### CSV Trace Format (V2)
+```text
+PC,Target,IsBackward,LocalHistory,Taken
+4198954,4198960,0,170,1
+4198954,4198960,0,85,0
 ...
 ```
 
-Each row = one branch instruction that executed. The same PC appears many times because it's inside a loop.
+---
+### Dashboard Previews
+
+*(Add Screenshot 1: Streamlit Dashboard Home / Code Input here)*
+
+*(Add Screenshot 2: Visualizations & Trace Results here)*
