@@ -1,55 +1,60 @@
 #include <iostream>
 #include <vector>
-#include <cstdlib>
 
 using namespace std;
 
-void bubbleSort(vector<int>& arr) {
-    int n = arr.size();
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = 0; j < n - i - 1; j++) {
-            // This condition creates massive amounts of branch data
-            if (arr[j] > arr[j + 1]) { 
-                swap(arr[j], arr[j + 1]);
-            }
-        }
-    }
-}
-
-void quickSort(vector<int>& arr, int low, int high) {
-    if (low < high) { 
-        int pivot = arr[high];
-        int i = (low - 1);
-        for (int j = low; j <= high - 1; j++) {
-            // Another highly variable branch
-            if (arr[j] < pivot) { 
-                i++;
-                swap(arr[i], arr[j]);
-            }
-        }
-        swap(arr[i + 1], arr[high]);
-        int pi = i + 1;
-        quickSort(arr, low, pi - 1);
-        quickSort(arr, pi + 1, high);
-    }
-}
+// We use volatile to prevent the compiler from optimizing the branches away
+volatile int dummy_global = 0;
 
 int main() {
-    // Generate an array of 5,000 random numbers
-    int dataSize = 5000;
-    vector<int> data1(dataSize);
-    vector<int> data2(dataSize);
+    cout << "--- INITIATING ADVERSARIAL PAYLOAD ---" << endl;
     
-    for(int i = 0; i < dataSize; i++) {
-        int val = rand() % 10000;
-        data1[i] = val;
-        data2[i] = val;
+    int state = 0;
+    long long operations = 0;
+
+    // We loop 500,000 times. With ~10 branches per loop, 
+    // this will generate exactly around 5,000,000 branches for the Pin Tool.
+    for (int i = 0; i < 500000; i++) {
+        
+        // ADVERSARIAL BRANCH 1: The "Mod-3 Thrash"
+        // Pattern: 1, 0, 0, 1, 0, 0...
+        // 2-bit counter will constantly lag and mispredict the '1' and the first '0'.
+        // AI will see the 8-bit history and predict this with 100% accuracy.
+        if (i % 3 == 0) {
+            dummy_global++;
+        } else {
+            dummy_global--;
+        }
+
+        // ADVERSARIAL BRANCH 2: The "Hysteresis Breaker"
+        // Pattern: 1, 1, 0, 0, 1, 1, 0, 0...
+        // This perfectly exploits the 2-bit state machine. Just as the counter 
+        // reaches "Strongly Taken", the pattern flips, guaranteeing missed predictions.
+        if ((i / 2) % 2 == 0) {
+            operations += 2;
+        } else {
+            operations -= 2;
+        }
+
+        // ADVERSARIAL BRANCH 3: The "Correlated State"
+        // This branch depends on the math done by the previous branches.
+        // Hardware aliases will overwrite this state, destroying 2-bit accuracy.
+        // XGBoost will easily map the non-linear relationship.
+        state = dummy_global + operations;
+        if (state > 0) {
+            dummy_global += 1;
+        } else if (state < 0) { // ADVERSARIAL BRANCH 4
+            dummy_global -= 1;
+        }
+
+        // ADVERSARIAL BRANCH 5: Pseudo-Random but Deterministic (LCG)
+        // A simple linear congruential generator logic. 
+        // Utter chaos for a 2-bit counter, but perfectly predictable for an 8-bit AI history.
+        if ((i * 16807) % 2147483647 % 2 == 0) {
+            operations++;
+        }
     }
-    
-    cout << "Executing Beast Mode Targets...\n";
-    bubbleSort(data1);
-    quickSort(data2, 0, data2.size() - 1);
-    
-    cout << "Execution Complete. Sorting finished.\n";
+
+    cout << "Payload Execution Complete. Final State: " << dummy_global << endl;
     return 0;
 }
