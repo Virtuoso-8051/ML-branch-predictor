@@ -2,105 +2,88 @@
 #include <fstream>
 #include <string>
 #include <sstream>
-#include <unordered_map>
 #include <iomanip>
-#include "ai_predictor.h" // The AI Brain
+#include <cstdint>  // Needed for uint64_t and uint8_t
+#include <cmath>    // Needed for m2cgen math functions
+#include <cstring>  // Needed for safe memory handling in m2cgen
+
+#include "ai_predictor.h" // The Transpiled Mega Brain
 
 using namespace std;
 
-// The 2-bit history state
-struct BranchHistory {
-    double last_outcome = 0.0;
-    double second_last_outcome = 0.0;
-};
-
-// The History Table
-unordered_map<long long, BranchHistory> history_table;
-
-// Function 1: Ask the AI for a prediction
-bool get_ai_prediction(long long pc, long long target) {
-    BranchHistory& hist = history_table[pc];
-
-    double input[4];
-    input[0] = (double)pc;
-    input[1] = (double)target;
-    input[2] = hist.last_outcome;
-    input[3] = hist.second_last_outcome;
-
-    double output[2] = {0.0, 0.0};
-    predict_branch_ai(input, output);
-
-    return output[1] > 0.5;
-}
-
-// Function 2: Update the history table
-void update_history(long long pc, bool actual_taken) {
-    BranchHistory& hist = history_table[pc];
-    hist.second_last_outcome = hist.last_outcome;
-    hist.last_outcome = actual_taken ? 1.0 : 0.0;
-}
-
 int main() {
-    cout << "\n--- INITIATING C++ HARDWARE SIMULATOR ---" << endl;
+    cout << "\n--- BOOTING BARE-METAL AI SIMULATOR ---" << endl;
     
-    ifstream file("branch_data_test.csv");
+    ifstream file("branch_data.csv");
     string line;
 
     if (!file.is_open()) {
-        cout << "Error: Could not open branch_data_test.csv. Make sure it is in the same folder!" << endl;
+        cout << "Error: Could not open branch_data.csv. Did you run the Pin tool?" << endl;
         return 1;
     }
 
-    // Skip the CSV header row ("PC,Target,Taken")
+    // Skip the V2 header row ("PC,Target,IsBackward,LocalHistory,Taken")
     getline(file, line);
 
     long long total_branches = 0;
     long long correct_predictions = 0;
 
-    cout << " -> Booting AI Brain..." << endl;
-    cout << " -> Parsing 665MB Trace File (Millions of instructions)..." << endl;
+    cout << " -> Booting Bare-Metal AI Brain..." << endl;
+    cout << " -> Processing Adversarial Trace..." << endl;
 
     // Read the file line by line
     while (getline(file, line)) {
-        stringstream ss(line);
-        string pc_str, target_str, taken_str;
+        // Skip empty lines to prevent stoi crashes
+        if (line.empty()) continue; 
 
-        // Parse CSV columns
+        stringstream ss(line);
+        string pc_str, target_str, backward_str, hist_str, taken_str;
+
+        // Parse our 5-column CSV format safely
         getline(ss, pc_str, ',');
         getline(ss, target_str, ',');
-        getline(ss, taken_str, ',');
-
-        // Convert Hex strings (like "0x4000") to long long integers natively
-        long long pc = stoull(pc_str, nullptr, 16);
-        long long target = stoull(target_str, nullptr, 16);
-        bool actual_taken = stoi(taken_str);
-
-        // 1. AI makes its prediction BEFORE the branch executes
-        bool predicted = get_ai_prediction(pc, target);
+        getline(ss, backward_str, ',');
+        getline(ss, hist_str, ',');
         
-        // 2. Tally the score
-        if (predicted == actual_taken) {
-            correct_predictions++;
-        }
+        // FIX: Read to the end of the line (no comma delimiter) for the final column
+        getline(ss, taken_str);
 
-        // 3. Update the history table with the actual result
-        update_history(pc, actual_taken);
-        total_branches++;
+        try {
+            // Convert data types natively
+            uint64_t pc = stoull(pc_str, nullptr, 16);
+            uint64_t target = stoull(target_str, nullptr, 16);
+            int isBackward = stoi(backward_str);
+            uint8_t localHistory = static_cast<uint8_t>(stoi(hist_str));
+            int actual_taken = stoi(taken_str);
 
-        // Print progress every 5 million rows so we know it is running
-        if (total_branches % 5000000 == 0) {
-            cout << "    ...Processed " << total_branches << " branches..." << endl;
+            // AI makes its prediction in bare-metal C++
+            int predicted = AIPredictor::predict(pc, target, isBackward, localHistory);
+            
+            // Tally the score
+            if (predicted == actual_taken) {
+                correct_predictions++;
+            }
+
+            total_branches++;
+        } catch (const std::exception& e) {
+            // If there's a malformed row at the end of the CSV, gracefully skip it
+            continue;
         }
     }
 
     // Calculate final accuracy
+    if (total_branches == 0) {
+        cout << "Error: No valid branch data found." << endl;
+        return 1;
+    }
+
     double accuracy = ((double)correct_predictions / total_branches) * 100.0;
 
     cout << "\n==========================================" << endl;
-    cout << "          SIMULATION COMPLETE!            " << endl;
+    cout << "          C++ SIMULATION COMPLETE!        " << endl;
     cout << "  Total Branches:  " << total_branches << endl;
     cout << "  Correct Guesses: " << correct_predictions << endl;
-    cout << "  C++ AI Accuracy: " << fixed << setprecision(2) << accuracy << "%" << endl;
+    cout << "  C++ AI ACCURACY: " << fixed << setprecision(2) << accuracy << "%" << endl;
     cout << "==========================================\n" << endl;
 
     return 0;
